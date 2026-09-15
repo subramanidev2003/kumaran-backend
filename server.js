@@ -3,8 +3,13 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 const Invoice = require('./models/Invoice');
 const Expense = require('./models/Expense');
+const Album = require('./models/Album');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -144,6 +149,75 @@ app.delete('/api/expenses/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting expense:', error);
     res.status(500).json({ error: 'Failed to delete expense' });
+  }
+});
+// Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'kumaran_studio_albums',
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'JPG', 'PNG', 'JPEG']
+  }
+});
+const upload = multer({ storage: storage });
+
+// --- ALBUM ROUTES ---
+
+app.post('/api/albums', upload.fields([{ name: 'coverImage', maxCount: 1 }, { name: 'galleryImages', maxCount: 15 }]), async (req, res) => {
+  try {
+    const { title, category } = req.body;
+    
+    if (!req.files || !req.files['coverImage']) {
+      return res.status(400).json({ error: 'Cover image is required' });
+    }
+
+    const coverImageUrl = req.files['coverImage'][0].path;
+    const galleryUrls = req.files['galleryImages'] ? req.files['galleryImages'].map(file => file.path) : [];
+
+    const newAlbum = new Album({
+      title,
+      category,
+      coverImage: coverImageUrl,
+      gallery: galleryUrls
+    });
+
+    const savedAlbum = await newAlbum.save();
+    res.status(201).json(savedAlbum);
+  } catch (error) {
+    console.error('Error uploading album:', error);
+    res.status(500).json({ error: 'Failed to upload album' });
+  }
+});
+
+app.get('/api/albums', async (req, res) => {
+  try {
+    const { category } = req.query;
+    let query = {};
+    if (category) query.category = category;
+    const albums = await Album.find(query).sort({ createdAt: -1 });
+    res.status(200).json(albums);
+  } catch (error) {
+    console.error('Error fetching albums:', error);
+    res.status(500).json({ error: 'Failed to fetch albums' });
+  }
+});
+
+app.delete('/api/albums/:id', async (req, res) => {
+  try {
+    const deletedAlbum = await Album.findByIdAndDelete(req.params.id);
+    if (!deletedAlbum) {
+      return res.status(404).json({ error: 'Album not found' });
+    }
+    res.status(200).json({ message: 'Album deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting album:', error);
+    res.status(500).json({ error: 'Failed to delete album' });
   }
 });
 
